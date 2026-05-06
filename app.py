@@ -52,7 +52,7 @@ try:
 
     # --- KARTE: ZOOM OPTIMIERT ---
     m = folium.Map(
-        location=[47.41, 8.10], # Mitte leicht angepasst
+        location=[47.41, 8.05], # Mitte leicht angepasst
         zoom_start=9.9,         # Höherer Wert = näher dran
         tiles=None,
         zoom_control=False, 
