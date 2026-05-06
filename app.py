@@ -50,13 +50,15 @@ try:
     if st.session_state.feedback:
         st.error(st.session_state.feedback)
 
-    # --- KARTE: ZOOM FIXIEREN ---
-    # Wir nutzen einen etwas kleineren Zoom (9.2 statt 10), damit nichts abgeschnitten wird
+    # --- KARTE: ZOOM OPTIMIERT ---
     m = folium.Map(
-        location=[47.40, 8.12], 
-        zoom_start=9.2, 
+        location=[47.41, 8.12], # Mitte leicht angepasst
+        zoom_start=9.9,         # Höherer Wert = näher dran
         tiles=None,
-        zoom_control=False, dragging=False, scrollWheelZoom=False, attributionControl=False
+        zoom_control=False, 
+        dragging=False, 
+        scrollWheelZoom=False, 
+        attributionControl=False
     )
     
     folium.Rectangle(bounds=[[-90, -180], [90, 180]], fill=True, fill_color='#aadaff', fill_opacity=1).add_to(m)
