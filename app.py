@@ -5,7 +5,15 @@ from streamlit_folium import st_folium
 import random
 import os
 
-st.set_page_config(page_title="Aargau Geografie-Trainer", layout="centered")
+st.set_page_config(page_title="Aargau Quiz", layout="centered")
+
+# CSS um die Karte im Container zu zentrieren und Ränder zu minimieren
+st.markdown("""
+    <style>
+    .stMainContainer { padding-top: 2rem; }
+    iframe { border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
 
 @st.cache_data
 def load_data():
@@ -31,94 +39,69 @@ try:
     if 'score' not in st.session_state: st.session_state.score = 0
 
     # --- SIDEBAR ---
-    st.sidebar.title("Quiz-Optionen")
-    modus = st.sidebar.radio("Modus wählen:", ["Klicken", "Benennen"])
-    if st.sidebar.button("Quiz neu starten"):
+    st.sidebar.title("Einstellungen")
+    modus = st.sidebar.radio("Modus:", ["Klicken", "Benennen"])
+    if st.sidebar.button("Reset"):
         st.session_state.solved = []
         st.session_state.score = 0
         st.session_state.target = random.choice(gdf[name_col].tolist())
         st.rerun()
 
     # --- HEADER ---
-    header_color = "#3e4a61"
-    if modus == "Klicken":
-        instruction = f"Klicke auf: <span style='background-color: white; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold;'>{st.session_state.target}</span>"
-    else:
-        instruction = "Wie heisst die <span style='background-color: #f1c40f; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold;'>gelbe</span> Gemeinde?"
-
-    st.markdown(f"""
-        <div style="background-color: {header_color}; padding: 15px; border-radius: 10px; text-align: center; color: white; font-family: sans-serif;">
-            <h2 style="margin:0;">{instruction}</h2>
-            <p style="margin:8px 0 0 0; opacity: 0.8;">Fortschritt: {len(st.session_state.solved)} / {len(gdf)} | Punkte: {st.session_state.score}</p>
+    header_html = f"""
+        <div style="background-color: #3e4a61; padding: 15px; border-radius: 10px; text-align: center; color: white; margin-bottom: 20px;">
+            <h2 style="margin:0;">{f"Klicke auf: <b style='color:black; background:white; padding:0 5px;'>{st.session_state.target}</b>" if modus == "Klicken" else "Benenne die gelbe Gemeinde"}</h2>
+            <p style="margin:5px 0 0 0;">Gelöst: {len(st.session_state.solved)}/201 | Punkte: {st.session_state.score}</p>
         </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
 
     if modus == "Benennen":
-        st.write("")
-        with st.form("input_form", clear_on_submit=True):
-            user_input = st.text_input("Name der Gemeinde:", placeholder="Tippe hier...")
-            if st.form_submit_button("Prüfen"):
-                if user_input.strip().lower() == st.session_state.target.lower():
-                    st.success("Richtig!")
-                    if st.session_state.target not in st.session_state.solved:
-                        st.session_state.solved.append(st.session_state.target)
-                        st.session_state.score += 1
-                    remaining = [n for n in gdf[name_col].tolist() if n not in st.session_state.solved]
-                    if remaining: st.session_state.target = random.choice(remaining)
-                    st.rerun()
-                else:
-                    st.error("Leider falsch!")
+        with st.form("quiz_form", clear_on_submit=True):
+            ui = st.text_input("Name:")
+            if st.form_submit_button("Prüfen") and ui.strip().lower() == st.session_state.target.lower():
+                st.session_state.solved.append(st.session_state.target)
+                st.session_state.score += 1
+                st.session_state.target = random.choice([n for n in gdf[name_col] if n not in st.session_state.solved])
+                st.rerun()
 
-    # --- KARTEN-STYLING ---
-    def style_fn(feature):
-        name = feature['properties'][name_col]
-        if name in st.session_state.solved:
-            return {'fillColor': '#ffffff', 'color': '#555', 'weight': 1, 'fillOpacity': 1}
-        if modus == "Benennen" and name == st.session_state.target:
-            return {'fillColor': '#f1c40f', 'color': '#000', 'weight': 2, 'fillOpacity': 1}
-        return {'fillColor': '#27854d', 'color': '#ffffff', 'weight': 0.7, 'fillOpacity': 1}
-
-    # --- MANUELLE BERECHNUNG ---
+    # --- KARTEN-TRICK ---
     bounds = gdf.total_bounds
-    center_lat = (bounds[1] + bounds[3]) / 2
-    center_lon = (bounds[0] + bounds[2]) / 2
+    cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
     
-    # Wir setzen einen fixen Zoom-Level, der für den Aargau bei dieser Fenstergröße passt.
-    # 9.4 oder 9.5 ist oft ideal, um den Rand zu füllen.
+    # Wir erstellen die Map OHNE Zoom-Vorgabe, damit fit_bounds Priorität hat
     m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=9.4, 
+        location=[cy, cx],
         tiles=None,
-        scrollWheelZoom=False, 
-        dragging=False, 
-        zoom_control=False,
-        attributionControl=False
+        zoom_control=False, dragging=False, scrollWheelZoom=False, attributionControl=False
     )
     
-    folium.Rectangle(
-        bounds=[[-90, -180], [90, 180]],
-        fill=True, fill_color='#aadaff', fill_opacity=1
-    ).add_to(m)
+    folium.Rectangle(bounds=[[-90, -180], [90, 180]], fill=True, fill_color='#aadaff', fill_opacity=1).add_to(m)
 
-    folium.GeoJson(
-        gdf,
-        style_function=style_fn,
-        highlight_function=lambda x: {'fillColor': '#f1c40f', 'fillOpacity': 0.8} if modus == "Klicken" else {}
-    ).add_to(m)
+    def style_fn(f):
+        n = f['properties'][name_col]
+        if n in st.session_state.solved: color = '#ffffff'
+        elif modus == "Benennen" and n == st.session_state.target: color = '#f1c40f'
+        else: color = '#27854d'
+        return {'fillColor': color, 'color': '#fff', 'weight': 0.5, 'fillOpacity': 1}
 
-    # st_folium mit festen Dimensionen erzwingt das Layout
-    output = st_folium(m, width=700, height=500, key="ag_quiz_final", returned_objects=["last_active_drawing"])
+    folium.GeoJson(gdf, style_function=style_fn, 
+                   highlight_function=lambda x: {'fillColor': '#f1c40f'} if modus == "Klicken" else {}).add_to(m)
 
-    if modus == "Klicken" and output and output.get('last_active_drawing'):
-        clicked = output['last_active_drawing']['properties'][name_col]
+    # Hier setzen wir fit_bounds extrem aggressiv
+    m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
+
+    # st_folium mit 'use_container_width=True' füllt den Platz besser aus
+    out = st_folium(m, use_container_width=True, height=500, key="ag_final")
+
+    if modus == "Klicken" and out and out.get('last_active_drawing'):
+        clicked = out['last_active_drawing']['properties'][name_col]
         if clicked == st.session_state.target:
             if clicked not in st.session_state.solved:
                 st.session_state.solved.append(clicked)
                 st.session_state.score += 1
-            remaining = [n for n in gdf[name_col].tolist() if n not in st.session_state.solved]
-            if remaining: st.session_state.target = random.choice(remaining)
+            st.session_state.target = random.choice([n for n in gdf[name_col] if n not in st.session_state.solved])
             st.rerun()
 
 except Exception as e:
-    st.error("Fehler beim Laden")
-    st.write(e)
+    st.error(f"Fehler: {e}")
