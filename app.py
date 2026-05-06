@@ -5,9 +5,9 @@ from streamlit_folium import st_folium
 import random
 import os
 
-st.set_page_config(page_title="Aargau Quiz", layout="centered")
+st.set_page_config(page_title="Aargau Gemeinde Quiz", layout="centered")
 
-# CSS für maximale Sichtbarkeit
+# CSS für Styling und Layout
 st.markdown("""
     <style>
     .block-container { padding-top: 1rem; }
@@ -29,7 +29,18 @@ def load_data():
 try:
     gdf, name_col = load_data()
 
-    # --- SESSION STATE (Die "Gedächtnis"-Logik) ---
+    # --- SIDEBAR FUNKTIONEN ---
+    st.sidebar.title("Menü")
+    modus = st.sidebar.radio("Modus:", ["Klicken", "Benennen"])
+    
+    if st.sidebar.button("Quiz Neustarten"):
+        st.session_state.results = {name: 0 for name in gdf[name_col]}
+        st.session_state.current_attempts = 0
+        st.session_state.target = random.choice(gdf[name_col].tolist())
+        st.session_state.feedback = None
+        st.rerun()
+
+    # --- SESSION STATE INITIALISIERUNG ---
     if 'results' not in st.session_state:
         st.session_state.results = {name: 0 for name in gdf[name_col]}
     if 'target' not in st.session_state:
@@ -42,7 +53,7 @@ try:
     # --- HEADER ---
     st.markdown(f"""
         <div style="background-color:#3e4a61; padding:20px; border-radius:12px; text-align:center; color:white;">
-            <h1 style="margin:0;">Klicke auf: <span style="background:white; color:black; padding:2px 10px; border-radius:5px;">{st.session_state.target}</span></h1>
+            <h1 style="margin:0;">{f"Klicke auf: <span style='background:white; color:black; padding:2px 10px; border-radius:5px;'>{st.session_state.target}</span>" if modus == "Klicken" else "Benenne die gelbe Gemeinde"}</h1>
             <p style="margin:10px 0 0 0; font-size:1.2rem;">Versuch: {st.session_state.current_attempts + 1} / 3</p>
         </div>
     """, unsafe_allow_html=True)
@@ -50,15 +61,34 @@ try:
     if st.session_state.feedback:
         st.error(st.session_state.feedback)
 
-    # --- KARTE: ZOOM OPTIMIERT ---
+    # --- INPUT FÜR "BENENNEN" MODUS ---
+    if modus == "Benennen":
+        with st.form("name_input", clear_on_submit=True):
+            ui = st.text_input("Name der Gemeinde:")
+            if st.form_submit_button("Prüfen"):
+                if ui.strip().lower() == st.session_state.target.lower():
+                    st.session_state.current_attempts += 1
+                    st.session_state.results[st.session_state.target] = st.session_state.current_attempts
+                    st.session_state.current_attempts = 0
+                    st.session_state.feedback = f"Richtig! Das war {st.session_state.target}."
+                    st.session_state.target = random.choice([n for n, r in st.session_state.results.items() if r == 0])
+                else:
+                    st.session_state.current_attempts += 1
+                    if st.session_state.current_attempts >= 3:
+                        st.session_state.results[st.session_state.target] = 3
+                        st.session_state.current_attempts = 0
+                        st.session_state.feedback = f"Falsch. Die gesuchte Gemeinde war {st.session_state.target}."
+                        st.session_state.target = random.choice([n for n, r in st.session_state.results.items() if r == 0])
+                    else:
+                        st.session_state.feedback = "Falsch! Versuch es noch einmal."
+                st.rerun()
+
+    # --- KARTE ---
     m = folium.Map(
-        location=[47.38, 8.12], # Mitte leicht angepasst
-        zoom_start=9.9,         # Höherer Wert = näher dran
+        location=[47.38, 8.12], 
+        zoom_start=9.9, # Optimierter Zoom aus deinem letzten Feedback
         tiles=None,
-        zoom_control=False, 
-        dragging=False, 
-        scrollWheelZoom=False, 
-        attributionControl=False
+        zoom_control=False, dragging=False, scrollWheelZoom=False, attributionControl=False
     )
     
     folium.Rectangle(bounds=[[-90, -180], [90, 180]], fill=True, fill_color='#aadaff', fill_opacity=1).add_to(m)
@@ -66,54 +96,41 @@ try:
     def style_fn(f):
         name = f['properties'][name_col]
         res = st.session_state.results.get(name, 0)
-        if res == 1: color = '#ffffff' # Weiss (1. Versuch)
-        elif res == 2: color = '#ffa500' # Orange (2. Versuch)
-        elif res >= 3: color = '#ff4b4b' # Rot (3. Versuch/Hilfe)
-        else: color = '#27854d' # Grün (offen)
+        if res == 1: color = '#ffffff' # Weiss
+        elif res == 2: color = '#ffa500' # Orange
+        elif res >= 3: color = '#ff4b4b' # Rot
+        elif modus == "Benennen" and name == st.session_state.target: color = '#f1c40f' # Gelb markieren
+        else: color = '#27854d' # Grün
         return {'fillColor': color, 'color': 'white', 'weight': 0.7, 'fillOpacity': 1}
 
     folium.GeoJson(gdf, style_function=style_fn, 
-                   highlight_function=lambda x: {'fillColor': '#f1c40f'}).add_to(m)
+                   highlight_function=lambda x: {'fillColor': '#f1c40f'} if modus == "Klicken" else {}).add_to(m)
 
-    # WICHTIG: Die Karte muss eine feste ID haben, damit sie nicht springt
-    out = st_folium(m, use_container_width=True, height=550, key="ag_quiz_map")
+    out = st_folium(m, use_container_width=True, height=550, key="main_quiz_map")
 
-    # --- LOGIK BEI KLICK ---
-    if out and out.get('last_active_drawing'):
+    # --- KLICK LOGIK ---
+    if modus == "Klicken" and out and out.get('last_active_drawing'):
         clicked = out['last_active_drawing']['properties'][name_col]
-        
-        # Ignorieren, wenn die Gemeinde schon gelöst wurde
         if st.session_state.results[clicked] == 0:
-            
             if clicked == st.session_state.target:
-                # TREFFER
                 st.session_state.current_attempts += 1
                 st.session_state.results[clicked] = st.session_state.current_attempts
-                
-                # Reset für neue Runde
                 st.session_state.current_attempts = 0
                 st.session_state.feedback = None
                 remaining = [n for n, r in st.session_state.results.items() if r == 0]
-                if remaining:
-                    st.session_state.target = random.choice(remaining)
+                if remaining: st.session_state.target = random.choice(remaining)
                 st.rerun()
-            
             else:
-                # FALSCH GEKLICKT
                 st.session_state.current_attempts += 1
-                st.session_state.feedback = f"Das war {clicked}."
-                
-                # Wenn 3 Versuche erreicht sind
                 if st.session_state.current_attempts >= 3:
-                    st.session_state.results[st.session_state.target] = 3 # Markiere Zielgemeinde rot
-                    st.session_state.current_attempts = 0 # Reset Versuche
-                    st.session_state.feedback = f"Nicht gefunden! Gesucht war {st.session_state.target}."
-                    
+                    st.session_state.results[st.session_state.target] = 3
+                    st.session_state.current_attempts = 0
+                    st.session_state.feedback = f"Nicht gefunden! Das war {clicked}. Gesucht war {st.session_state.target}."
                     remaining = [n for n, r in st.session_state.results.items() if r == 0]
-                    if remaining:
-                        st.session_state.target = random.choice(remaining)
-                
+                    if remaining: st.session_state.target = random.choice(remaining)
+                else:
+                    st.session_state.feedback = f"Falsch, das war {clicked}!"
                 st.rerun()
 
 except Exception as e:
-    st.write("Lade Daten...")
+    st.info("Lade Daten...")
