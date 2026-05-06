@@ -1,0 +1,66 @@
+streamlit
+geopandas
+folium
+streamlit-folium
+
+**2. `app.py` (Dein erster Prototyp)**
+Hier ist ein Code, der deine JSON-Datei testet und eine einfache Karte zeigt:
+```python
+import streamlit as st
+import geopandas as gpd
+import folium
+from streamlit_folium import st_folium
+import random
+
+st.set_page_config(page_title="Aargau Quiz", layout="wide")
+st.title("Aargau Gemeinde-Quiz 🇨🇭")
+
+# Daten laden
+@st.cache_data
+def load_data():
+    # Ersetze "data.json" durch deinen Dateinamen
+    gdf = gpd.read_file("data.json")
+    # Wichtig: Schweizer Koordinaten in Welt-Koordinaten umwandeln
+    if gdf.crs != "epsg:4326":
+        gdf = gdf.to_crs(epsg=4326)
+    return gdf
+
+try:
+    gdf = load_data()
+    
+    # Quiz-Logik
+    if 'target' not in st.session_state:
+        # Hier "NAME" durch die Spalte in deinem JSON ersetzen
+        st.session_state.target = random.choice(gdf['NAME'].tolist())
+
+    st.header(f"Wo liegt die Gemeinde: :blue[{st.session_state.target}]?")
+
+    # Karte erstellen
+    m = folium.Map(location=[47.4, 8.1], zoom_start=10, tiles="CartoDB positron")
+    
+    # Gemeinden einzeichnen
+    folium.GeoJson(
+        gdf,
+        name="Gemeinden",
+        style_function=lambda x: {'fillColor': '#ffffff', 'color': '#000000', 'weight': 1, 'fillOpacity': 0.1}
+    ).add_to(m)
+
+    # Karte anzeigen
+    map_data = st_folium(m, width=1000, height=600)
+
+    # Wenn jemand klickt (Hier bauen wir später die Prüfung ein)
+    if st.button("Nächste Gemeinde"):
+        st.session_state.target = random.choice(gdf['NAME'].tolist())
+        st.rerun()
+
+except Exception as e:
+    st.error(f"Fehler beim Laden der Daten: {e}")
+    st.info("Prüfe, ob deine JSON-Datei wirklich im Repository liegt und 'data.json' heisst.")
+
+**3. `data.json`**
+Lade deine JSON-Datei in das Repository hoch.
+
+### Wie geht es weiter?
+Sobald du die Dateien auf GitHub hast, sag mir Bescheid. Ich zeige dir dann, wie du die "Klick-Prüfung" einbaust, damit die App erkennt, ob du die richtige Gemeinde getroffen hast! 
+
+Soll ich dir bei einem dieser Schritte (z.B. GitHub Bedienung) noch genauer helfen?
