@@ -7,11 +7,11 @@ import os
 
 st.set_page_config(page_title="Aargau Quiz", layout="centered")
 
-# CSS um die Karte im Container zu zentrieren und Ränder zu minimieren
+# CSS: Wir entfernen unnötige Abstände, damit die Karte Platz hat
 st.markdown("""
     <style>
-    .stMainContainer { padding-top: 2rem; }
-    iframe { border-radius: 10px; }
+    .block-container { padding-top: 1rem; padding-bottom: 0rem; }
+    iframe { width: 100% !important; border-radius: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -27,55 +27,55 @@ def load_data():
     if gdf.crs is None: gdf.crs = "epsg:2056"
     gdf = gdf.to_crs(epsg=4326)
     gdf['geometry'] = gdf['geometry'].simplify(0.0001, preserve_topology=True)
-    
     name_col = next((c for c in ['GMDNAME', 'NAME', 'GEMEINDE'] if c in gdf.columns), gdf.columns[0])
     return gdf, name_col
 
 try:
     gdf, name_col = load_data()
-
+    
+    # Session States initialisieren
     if 'solved' not in st.session_state: st.session_state.solved = []
     if 'target' not in st.session_state: st.session_state.target = random.choice(gdf[name_col].tolist())
     if 'score' not in st.session_state: st.session_state.score = 0
 
-    # --- SIDEBAR ---
-    st.sidebar.title("Einstellungen")
+    # Quiz Modus Auswahl in der Sidebar
     modus = st.sidebar.radio("Modus:", ["Klicken", "Benennen"])
-    if st.sidebar.button("Reset"):
-        st.session_state.solved = []
-        st.session_state.score = 0
-        st.session_state.target = random.choice(gdf[name_col].tolist())
-        st.rerun()
 
-    # --- HEADER ---
-    header_html = f"""
-        <div style="background-color: #3e4a61; padding: 15px; border-radius: 10px; text-align: center; color: white; margin-bottom: 20px;">
-            <h2 style="margin:0;">{f"Klicke auf: <b style='color:black; background:white; padding:0 5px;'>{st.session_state.target}</b>" if modus == "Klicken" else "Benenne die gelbe Gemeinde"}</h2>
-            <p style="margin:5px 0 0 0;">Gelöst: {len(st.session_state.solved)}/201 | Punkte: {st.session_state.score}</p>
+    # --- HEADER (DEIN DESIGN) ---
+    instruction = f"Klicke auf: <span style='background:white; color:black; padding:2px 10px; border-radius:5px;'>{st.session_state.target}</span>" if modus == "Klicken" else "Wie heisst die <span style='color:#f1c40f;'>gelbe</span> Gemeinde?"
+    
+    st.markdown(f"""
+        <div style="background-color: #3e4a61; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 10px;">
+            <h1 style="margin:0; font-size: 2.5rem;">{instruction}</h1>
+            <p style="margin:10px 0 0 0; font-size: 1.2rem; opacity: 0.8;">Fortschritt: {len(st.session_state.solved)} / 201 | Punkte: {st.session_state.score}</p>
         </div>
-    """
-    st.markdown(header_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
     if modus == "Benennen":
-        with st.form("quiz_form", clear_on_submit=True):
-            ui = st.text_input("Name:")
-            if st.form_submit_button("Prüfen") and ui.strip().lower() == st.session_state.target.lower():
+        with st.form("input", clear_on_submit=True):
+            col1, col2 = st.columns([4,1])
+            with col1: ui = st.text_input("Name der Gemeinde:", label_visibility="collapsed")
+            with col2: submit = st.form_submit_button("Prüfen")
+            if submit and ui.strip().lower() == st.session_state.target.lower():
                 st.session_state.solved.append(st.session_state.target)
                 st.session_state.score += 1
                 st.session_state.target = random.choice([n for n in gdf[name_col] if n not in st.session_state.solved])
                 st.rerun()
 
-    # --- KARTEN-TRICK ---
-    bounds = gdf.total_bounds
-    cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
-    
-    # Wir erstellen die Map OHNE Zoom-Vorgabe, damit fit_bounds Priorität hat
+    # --- DIE KARTEN-LOGIK (MANUELL ERZWUNGEN) ---
+    # Wir setzen den Fokus exakt auf die Mitte des Aargaus
+    # Koordinaten ca.: Lat 47.4, Lon 8.1
     m = folium.Map(
-        location=[cy, cx],
+        location=[47.41, 8.12], 
+        zoom_start=10, # <--- HIER EXPERIMENTIEREN: 10 ist näher als 9
         tiles=None,
-        zoom_control=False, dragging=False, scrollWheelZoom=False, attributionControl=False
+        zoom_control=False,
+        dragging=False,
+        scrollWheelZoom=False,
+        attributionControl=False
     )
-    
+
+    # Hintergrundfarbe
     folium.Rectangle(bounds=[[-90, -180], [90, 180]], fill=True, fill_color='#aadaff', fill_opacity=1).add_to(m)
 
     def style_fn(f):
@@ -83,17 +83,24 @@ try:
         if n in st.session_state.solved: color = '#ffffff'
         elif modus == "Benennen" and n == st.session_state.target: color = '#f1c40f'
         else: color = '#27854d'
-        return {'fillColor': color, 'color': '#fff', 'weight': 0.5, 'fillOpacity': 1}
+        return {'fillColor': color, 'color': 'white', 'weight': 1, 'fillOpacity': 1}
 
-    folium.GeoJson(gdf, style_function=style_fn, 
-                   highlight_function=lambda x: {'fillColor': '#f1c40f'} if modus == "Klicken" else {}).add_to(m)
+    folium.GeoJson(
+        gdf, 
+        style_function=style_fn,
+        highlight_function=lambda x: {'fillColor': '#f1c40f', 'fillOpacity': 0.8} if modus == "Klicken" else {}
+    ).add_to(m)
 
-    # Hier setzen wir fit_bounds extrem aggressiv
-    m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
+    # st_folium mit "use_container_width" sorgt für die maximale Breite
+    out = st_folium(
+        m, 
+        use_container_width=True, 
+        height=600, 
+        key="aargau_map_v1",
+        returned_objects=["last_active_drawing"]
+    )
 
-    # st_folium mit 'use_container_width=True' füllt den Platz besser aus
-    out = st_folium(m, use_container_width=True, height=500, key="ag_final")
-
+    # Klick-Logik
     if modus == "Klicken" and out and out.get('last_active_drawing'):
         clicked = out['last_active_drawing']['properties'][name_col]
         if clicked == st.session_state.target:
