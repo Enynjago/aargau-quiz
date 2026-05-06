@@ -78,13 +78,20 @@ try:
             return {'fillColor': '#f1c40f', 'color': '#000', 'weight': 2, 'fillOpacity': 1}
         return {'fillColor': '#27854d', 'color': '#ffffff', 'weight': 0.7, 'fillOpacity': 1}
 
-    bounds = gdf.total_bounds # [minx, miny, maxx, maxy]
+    # --- MANUELLE BERECHNUNG ---
+    bounds = gdf.total_bounds
+    center_lat = (bounds[1] + bounds[3]) / 2
+    center_lon = (bounds[0] + bounds[2]) / 2
     
+    # Wir setzen einen fixen Zoom-Level, der für den Aargau bei dieser Fenstergröße passt.
+    # 9.4 oder 9.5 ist oft ideal, um den Rand zu füllen.
     m = folium.Map(
-        # Wir zentrieren die Karte hart auf die Mitte der Bounds
-        location=[(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2],
+        location=[center_lat, center_lon],
+        zoom_start=9.4, 
         tiles=None,
-        scrollWheelZoom=False, dragging=False, zoom_control=False,
+        scrollWheelZoom=False, 
+        dragging=False, 
+        zoom_control=False,
         attributionControl=False
     )
     
@@ -99,13 +106,10 @@ try:
         highlight_function=lambda x: {'fillColor': '#f1c40f', 'fillOpacity': 0.8} if modus == "Klicken" else {}
     ).add_to(m)
 
-    # CRITICAL FIX: fit_bounds mit padding=0 sorgt dafür, dass der Aargau das Fenster füllt
-    m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], padding_top_left=[0,0], padding_bottom_right=[0,0])
+    # st_folium mit festen Dimensionen erzwingt das Layout
+    output = st_folium(m, width=700, height=500, key="ag_quiz_final", returned_objects=["last_active_drawing"])
 
-    # Wir nutzen eine etwas geringere Höhe (450 statt 550), damit er "breiter" wirkt
-    output = st_folium(m, width=700, height=450, key="ag_quiz_tight")
-
-    if modus == "Klicken" and output['last_active_drawing']:
+    if modus == "Klicken" and output and output.get('last_active_drawing'):
         clicked = output['last_active_drawing']['properties'][name_col]
         if clicked == st.session_state.target:
             if clicked not in st.session_state.solved:
@@ -116,5 +120,5 @@ try:
             st.rerun()
 
 except Exception as e:
-    st.error("Fehler")
+    st.error("Fehler beim Laden")
     st.write(e)
